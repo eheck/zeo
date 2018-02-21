@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Zeo</title>
+		<link rel="icon" type="image/png" href="images/icon.png">
+
+		<meta charset="UTF-8">
+		<meta name="description" content="Zeo App">
+		<meta name="author" content="Emilio, emilio.heck@gmail.com">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+
+		<link rel="manifest" href="manifest.json">
+		<link rel="stylesheet" href="styles/font.css" type="text/css">
+		<link rel="stylesheet" href="styles/normalize.css" type="text/css">
+		<link rel="stylesheet" href="styles/skeleton.css" type="text/css">
+
+		<script src="https://cdn.jsdelivr.net/npm/vue@2.5.13/dist/vue.js"></script>
+		<script src="https://www.gstatic.com/firebasejs/4.8.1/firebase-app.js"></script>
+		<script src="https://www.gstatic.com/firebasejs/4.8.1/firebase-messaging.js"></script>
+		<script src="scripts/firebase-configuration.js"></script>
+		<script async defer type="text/javascript" src="scripts/script.js"></script>
+	</head>
+
+	<body>
+		<div id="zeo" class="container">
+			<div class="row">
+				<div class="twelve columns">
+					<ol v-if="logs">
+						<ul v-for="log in logs">
+							{{ log }}
+						</ul>
+					</ol>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
