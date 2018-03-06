@@ -1,37 +1,212 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 	<head>
 		<title>Zeo</title>
-		<link rel="icon" type="image/png" href="images/icon.png">
-
-		<meta charset="UTF-8">
-		<meta name="description" content="Zeo App">
-		<meta name="author" content="Emilio, emilio.heck@gmail.com">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-
-		<link rel="manifest" href="manifest.json">
-		<link rel="stylesheet" href="styles/font.css" type="text/css">
-		<link rel="stylesheet" href="styles/normalize.css" type="text/css">
-		<link rel="stylesheet" href="styles/skeleton.css" type="text/css">
-
-		<script src="https://cdn.jsdelivr.net/npm/vue@2.5.13/dist/vue.js"></script>
-		<script src="https://www.gstatic.com/firebasejs/4.8.1/firebase-app.js"></script>
-		<script src="https://www.gstatic.com/firebasejs/4.8.1/firebase-messaging.js"></script>
-		<script src="scripts/firebase-configuration.js"></script>
-		<script async defer type="text/javascript" src="scripts/script.js"></script>
+		<style>
+			button { width: 75px; }
+			input { width: 200px; }
+		</style>
 	</head>
-
 	<body>
-		<div id="zeo" class="container">
-			<div class="row">
-				<div class="twelve columns">
-					<ol v-if="logs">
-						<ul v-for="log in logs">
-							{{ log }}
-						</ul>
-					</ol>
-				</div>
-			</div>
-		</div>
+		<input id="id" type="text">
+		<button id="register" onclick="register( )">register</button>
+		<br>
+		<input id="to" type="text" >
+		<button id="connect" onclick="connect( )">connect</button>
+		<br>
+		<input id="message" type="text">
+		<button id="send" onclick="send( )">send</button>
+		<br>
+		<textarea id="area" rows="10" cols="50"></textarea>
+
+		<script type="text/javascript">
+			const cfg = { 'iceServers': [ { 'url': 'stun:23.21.150.121' } ] };
+			const con = { 'optional': [ { 'DtlsSrtpKeyAgreement': true } ] };
+			const peerConnection1 = new RTCPeerConnection( cfg, con );
+			const peerConnection2 = new RTCPeerConnection( cfg, con );
+			const area = document.getElementById( 'area' );
+
+			let source = undefined;
+			let offer = undefined;
+			let answer = undefined;
+			let dataChannel1 = null;
+			let dataChannel2 = null;
+			let activeDataChannel = undefined;
+
+			function register( ) {
+				log( ':: register( )' );
+
+				const id = document.getElementById( 'id' ).value.trim( );
+
+				if( id === "" ) {
+					return;
+				}
+
+				if( source ) {
+					source.close( );
+				}
+
+				source = new EventSource( '/api/notifications/' + id );
+
+				source.onmessage = function( event ) {
+					const json = JSON.parse( event.data );
+
+					if( json.offer ) {
+						processOffer( json );
+						return;
+					}
+
+					if( json.answer ) {
+						processAnswer( json );
+						return;
+					}
+				};
+
+				log( 'registered as ' + id );
+			}
+
+			function connect( ) {
+				if( offer === undefined ) {
+					setTimeout( ( ) => { connect( ); }, 1000 );
+					return;
+				}
+
+				const id = document.getElementById( 'id' ).value.trim( );
+				const to = document.getElementById( 'to' ).value.trim( );
+
+				if( id === "" || to === "" ) {
+					return;
+				}
+
+				const url = '/api/connect/' + to;
+
+				fetch( url, {
+					body: JSON.stringify( { from: id, offer: offer } ),
+					method: 'POST',
+				} ).then( response => {
+					log( 'connecting to ' + to + ': ' + response.status );
+				} );
+			}
+
+			function send( ) {
+				//log( ':: send( )' );
+
+				if( !activeDataChannel ) {
+					return;
+				}
+
+				const message = document.getElementById( 'message' ).value.trim( );
+				log( '< ' + message );
+				activeDataChannel.send( JSON.stringify( { message: message } ) );
+			}
+
+			function calculateOffer( ) {
+				log( ':: calculateOffer( )' );
+
+				dataChannel1 = peerConnection1.createDataChannel( 'd(-.-)b', { reliable: true } );
+
+				dataChannel1.onopen = function( event ) {
+					activeDataChannel = dataChannel1;
+					log( 'connection 1 established' );
+				}
+
+				dataChannel1.onmessage = function( event ) {
+					log( '> ' + JSON.parse( event.data ).message );
+				}
+
+				peerConnection1.createOffer( function( description ) {
+					peerConnection1.setLocalDescription( description );
+				}, function( ) { } );
+			}
+
+			function processAnswer( message ) {
+				log( ':: processAnswer( )' );
+
+				const description = new RTCSessionDescription( JSON.parse( message.answer ) )
+				peerConnection1.setRemoteDescription( description );
+			}
+
+			peerConnection1.onicecandidate = function( event ) {
+				if( event.candidate === null ) {
+					offer = JSON.stringify( peerConnection1.localDescription );
+					log( 'offer calculated' );
+				}
+			}
+
+			function processOffer( message ) {
+				log( ':: processOffer( )' );
+
+				const description = new RTCSessionDescription( JSON.parse( message.offer ) );
+
+				peerConnection2.setRemoteDescription( description );
+				peerConnection2.createAnswer( function( answer ) {
+					peerConnection2.setLocalDescription( answer )
+				}, function( ) { } );
+
+				sendAnswer( message.from );
+			}
+
+			peerConnection2.onicecandidate = function( event ) {
+				if( event.candidate === null ) {
+					answer = JSON.stringify( peerConnection2.localDescription );
+					log( 'answer calculated' );
+				}
+			}
+
+			function sendAnswer( to ) {
+				if( answer === undefined ) {
+					setTimeout( ( ) => { sendAnswer( to ); }, 100 );
+					return;
+				}
+
+				const id = document.getElementById( 'id' ).value.trim( );
+
+				if( id === "" ) {
+					return;
+				}
+
+				const url = '/api/connect/' + to;
+
+				fetch( url, {
+					body: JSON.stringify( { from: id, answer: answer } ),
+					method: 'POST',
+				} ).then( response => {
+					document.getElementById( 'to' ).value = to;
+					log( 'connecting to ' + to + ': ' + response.status );
+				} );
+			}
+
+			peerConnection2.ondatachannel = function( event ) {
+				dataChannel2 = event.channel || event;
+
+				dataChannel2.onopen = function( event ) {
+					activeDataChannel = dataChannel2;
+					log( 'connection 2 established' );
+				}
+
+				dataChannel2.onmessage = function( event ) {
+					log( '> ' + JSON.parse( event.data ).message );
+				}
+			}
+
+			function now( ) {
+				const now = new Date( );
+				const h = now.getHours( );
+				const m = now.getMinutes( );
+				const s = now.getSeconds( );
+				const l = now.getMilliseconds( );
+
+				return	( h > 9 ? h : '0' + h ) + ':' +
+					( m > 9 ? m : '0' + m ) + ':' +
+					( s > 9 ? s : '0' + s ) + '.' +
+					( l < 10 ? '00' + l : ( l < 100 ? '0' + l : l ) );
+			}
+
+			function log( message ) {
+				area.value = now( ) + ' ' + message + '\n' + area.value;
+			}
+
+			calculateOffer( );
+		</script>
 	</body>
 </html>
