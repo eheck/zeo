@@ -20,7 +20,7 @@
 		<textarea id="area" rows="10" cols="50"></textarea>
 
 		<script type="text/javascript">
-			const cfg = { 'iceServers': [ { 'url': 'stun:23.21.150.121' } ] };
+			const cfg = { 'iceServers': [ { 'url': 'stun:stun.l.google.com:19302' }, { 'url': 'stun:23.21.150.121' } ] };
 			const con = { 'optional': [ { 'DtlsSrtpKeyAgreement': true } ] };
 			const peerConnection1 = new RTCPeerConnection( cfg, con );
 			const peerConnection2 = new RTCPeerConnection( cfg, con );
