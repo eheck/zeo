@@ -2,213 +2,132 @@
 <html>
 	<head>
 		<title>Zeo</title>
+		<script type="text/javascript" src="http://cdn.peerjs.com/0.3/peer.js"></script>
+
 		<style>
-			button { width: 75px; }
-			input { width: 200px; }
+			button { width: 70px; }
+			input { width: 330px; margin: 1px -2px 1px 0px; }
+			textarea { width: 400px; }
 		</style>
 	</head>
 	<body>
-		<input id="id" type="text">
-		<button id="register" onclick="register( )">register</button>
+		<input id="id" type="text" onkeypress="if( event.keyCode === 13 ) register( )">
+		<button onclick="register( )">register</button>
 		<br>
-		<input id="to" type="text" >
-		<button id="connect" onclick="connect( )">connect</button>
+
+		<input id="to" type="text" onkeypress="if( event.keyCode === 13 ) connect( )">
+		<button onclick="connect( )">connect</button>
 		<br>
-		<input id="message" type="text">
-		<button id="send" onclick="send( )">send</button>
+
+		<input id="msg" type="text" onkeypress="if( event.keyCode === 13 ) send( )">
+		<button onclick="send( )">send</button>
 		<br>
-		<textarea id="area" rows="10" cols="50"></textarea>
+
+		<textarea id="area" rows="15" readonly></textarea>
 
 		<script type="text/javascript">
-			const cfg = { 'iceServers': [
-				{ url:'stun:stun01.sipphone.com' },
-				{ url:'stun:stun.ekiga.net' },
-				{ url:'stun:stun.fwdnet.net' },
-				{ url:'stun:stun.ideasip.com' },
-				{ url:'stun:stun.iptel.org' },
-				{ url:'stun:stun.rixtelecom.se' },
-				{ url:'stun:stun.schlund.de' },
-				{ url:'stun:stun.l.google.com:19302' },
-				{ url:'stun:stun1.l.google.com:19302' },
-				{ url:'stun:stun2.l.google.com:19302' },
-				{ url:'stun:stun3.l.google.com:19302' },
-				{ url:'stun:stun4.l.google.com:19302' },
-				{ url:'stun:stunserver.org' },
-				{ url:'stun:stun.softjoys.com' },
-				{ url:'stun:stun.voiparound.com' },
-				{ url:'stun:stun.voipbuster.com' },
-				{ url:'stun:stun.voipstunt.com' },
-				{ url:'stun:stun.voxgratia.org' },
-				{ url:'stun:stun.xten.com' },
-				{ url: 'stun:stun.l.google.com:19302' },
-				{ url: 'stun:23.21.150.121' }
-			] };
-			const con = { 'optional': [ { 'DtlsSrtpKeyAgreement': true } ] };
-			const peerConnection1 = new RTCPeerConnection( cfg, con );
-			const peerConnection2 = new RTCPeerConnection( cfg, con );
+			const id = document.getElementById( 'id' );
+			const to = document.getElementById( 'to' );
+			const msg = document.getElementById( 'msg' );
 			const area = document.getElementById( 'area' );
 
-			let source = undefined;
-			let offer = undefined;
-			let answer = undefined;
-			let dataChannel1 = null;
-			let dataChannel2 = null;
-			let activeDataChannel = undefined;
+			let peer = undefined;
+			let connection = undefined;
+
+			id.focus( );
 
 			function register( ) {
-				log( ':: register( )' );
+				const myId = id.value.trim( );
 
-				const id = document.getElementById( 'id' ).value.trim( );
-
-				if( id === "" ) {
+				if( !myId || myId.length < 1 ) {
+					log( 'name is necesary' );
+					id.value = '';
+					id.focus( );
 					return;
 				}
 
-				if( source ) {
-					source.close( );
-				}
+				peer = new Peer( myId, { key: 'xt7pw2yxcp3w61or', debug: 3 } );
 
-				source = new EventSource( '/api/notifications/' + id );
+				peer.on( 'open', function( id ) {
+					log( 'registered as ' + id );
+					to.focus( );
+				} );
 
-				source.onmessage = function( event ) {
-					const json = JSON.parse( event.data );
+				peer.on( 'connection', function( dataConnection ) {
+					connection = dataConnection;
+					handleConnection( );
+				} );
 
-					if( json.offer ) {
-						processOffer( json );
-						return;
-					}
+				peer.on( 'call', function( mediaConnection ) {
+					log( 'call!' );
+					console.log( mediaConnection );
+				} );
 
-					if( json.answer ) {
-						processAnswer( json );
-						return;
-					}
-				};
+				peer.on( 'close', function( ) {
+					log( 'close! (2)' );
+				} );
 
-				log( 'registered as ' + id );
+				peer.on( 'disconnected', function( ) {
+					log( 'disconnected!' );
+				} );
+
+				peer.on( 'error', function( error ) {
+					log( 'error! (2)' + error.type );
+				} );
 			}
 
 			function connect( ) {
-				if( offer === undefined ) {
-					setTimeout( ( ) => { connect( ); }, 1000 );
+				if( peer === undefined ) {
+					log( 'registration is necesary' );
+					id.value = '';
+					to.value = '';
+					id.focus( );
 					return;
 				}
 
-				const id = document.getElementById( 'id' ).value.trim( );
-				const to = document.getElementById( 'to' ).value.trim( );
+				const peerId = to.value.trim( );
 
-				if( id === "" || to === "" ) {
+				if( !peerId || peerId.length < 1 ) {
+					log( 'peer name is necesary' );
+					to.value = '';
+					to.focus( );
 					return;
 				}
 
-				const url = '/api/connect/' + to;
-
-				fetch( url, {
-					body: JSON.stringify( { from: id, offer: offer } ),
-					method: 'POST',
-				} ).then( response => {
-					log( 'connecting to ' + to + ': ' + response.status );
-				} );
+				connection = peer.connect( peerId );
+				handleConnection( );
 			}
 
 			function send( ) {
-				//log( ':: send( )' );
-
-				if( !activeDataChannel ) {
+				if( connection === undefined ) {
+					to.focus( );
+					log( 'connection is necesary' );
 					return;
 				}
 
-				const message = document.getElementById( 'message' ).value.trim( );
+				const message = msg.value.trim( );
 				log( '< ' + message );
-				activeDataChannel.send( JSON.stringify( { message: message } ) );
+				connection.send( message );
 			}
 
-			function calculateOffer( ) {
-				log( ':: calculateOffer( )' );
-
-				dataChannel1 = peerConnection1.createDataChannel( 'd(-.-)b', { reliable: true } );
-
-				dataChannel1.onopen = function( event ) {
-					activeDataChannel = dataChannel1;
-					log( 'connection 1 established' );
-				}
-
-				dataChannel1.onmessage = function( event ) {
-					log( '> ' + JSON.parse( event.data ).message );
-				}
-
-				peerConnection1.createOffer( function( description ) {
-					peerConnection1.setLocalDescription( description );
-				}, function( ) { } );
-			}
-
-			function processAnswer( message ) {
-				log( ':: processAnswer( )' );
-
-				const description = new RTCSessionDescription( JSON.parse( message.answer ) )
-				peerConnection1.setRemoteDescription( description );
-			}
-
-			peerConnection1.onicecandidate = function( event ) {
-				if( event.candidate === null ) {
-					offer = JSON.stringify( peerConnection1.localDescription );
-					log( 'offer calculated' );
-				}
-			}
-
-			function processOffer( message ) {
-				log( ':: processOffer( )' );
-
-				const description = new RTCSessionDescription( JSON.parse( message.offer ) );
-
-				peerConnection2.setRemoteDescription( description );
-				peerConnection2.createAnswer( function( answer ) {
-					peerConnection2.setLocalDescription( answer )
-				}, function( ) { } );
-
-				sendAnswer( message.from );
-			}
-
-			peerConnection2.onicecandidate = function( event ) {
-				if( event.candidate === null ) {
-					answer = JSON.stringify( peerConnection2.localDescription );
-					log( 'answer calculated' );
-				}
-			}
-
-			function sendAnswer( to ) {
-				if( answer === undefined ) {
-					setTimeout( ( ) => { sendAnswer( to ); }, 100 );
-					return;
-				}
-
-				const id = document.getElementById( 'id' ).value.trim( );
-
-				if( id === "" ) {
-					return;
-				}
-
-				const url = '/api/connect/' + to;
-
-				fetch( url, {
-					body: JSON.stringify( { from: id, answer: answer } ),
-					method: 'POST',
-				} ).then( response => {
-					document.getElementById( 'to' ).value = to;
-					log( 'connecting to ' + to + ': ' + response.status );
+			function handleConnection( ) {
+				connection.on( 'data', function( data ) {
+					log( '> ' + data );
 				} );
-			}
 
-			peerConnection2.ondatachannel = function( event ) {
-				dataChannel2 = event.channel || event;
+				connection.on( 'open', function( ) {
+					msg.focus( );
+					to.value = connection.peer;
+					log( 'connected to ' + connection.peer );
+				} );
 
-				dataChannel2.onopen = function( event ) {
-					activeDataChannel = dataChannel2;
-					log( 'connection 2 established' );
-				}
+				connection.on( 'close', function( ) {
+					log( 'close! (3)' );
+				} );
 
-				dataChannel2.onmessage = function( event ) {
-					log( '> ' + JSON.parse( event.data ).message );
-				}
+				connection.on( 'error', function( error ) {
+					log( 'error! (3)' + error.type );
+				} );
 			}
 
 			function now( ) {
@@ -227,8 +146,6 @@
 			function log( message ) {
 				area.value = now( ) + ' ' + message + '\n' + area.value;
 			}
-
-			calculateOffer( );
 		</script>
 	</body>
 </html>
